@@ -1,0 +1,26 @@
+# ARMEPS procurement monitor configuration.
+# A tender matches if its row text (or detail page text, when fetch_details is true)
+# contains ANY of `keywords` and NONE of `exclude_keywords`. Matching is case-insensitive.
+# Write keywords in every language the announcements may use (Armenian / English / Russian).
+
+search_urls:
+  - https://armeps.am/epps/quickSearchAction.do
+
+keywords:
+  - համակարգիչ        # computer
+  - computer
+  - ծրագրային         # software
+  - software
+  - սերվեր            # server
+  - server
+
+exclude_keywords: []
+
+# Follow pagination links found on the results page (max pages per search URL).
+max_pages: 5
+
+# Also download each tender's detail page and match against its text (slower, more accurate).
+fetch_details: false
+
+# Seconds to wait between HTTP requests (be polite to the server).
+request_delay: 1.5

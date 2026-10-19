@@ -1,0 +1,54 @@
+name: ARMEPS monitor
+
+on:
+  schedule:
+    - cron: "17 5,11 * * *"   # 09:17 and 15:17 Yerevan time (UTC+4)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency: armeps-monitor
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check ARMEPS
+        id: check
+        run: python armeps_monitor.py --dump-html debug_html
+
+      - name: Open issue with new announcements
+        if: steps.check.outputs.new_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "ARMEPS: ${{ steps.check.outputs.new_count }} new announcement(s) $(date -u +%F)" \
+            --body-file new_announcements.md
+
+      - name: Save seen IDs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Update seen ARMEPS announcements"
+          git push
+
+      - name: Upload fetched HTML (for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: armeps-html
+          path: debug_html
+          retention-days: 3
