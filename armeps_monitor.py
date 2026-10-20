@@ -26,6 +26,12 @@ HOME_URL = "https://armeps.am/epps/home.do"
 QUICK_SEARCH_URL = "https://armeps.am/epps/quickSearchAction.do"
 # Advanced CfT search form (prepareAdvancedSearch.do?type=cft, form "searchCfTWorkspaceForm").
 ADVANCED_SEARCH_URL = "https://armeps.am/epps/viewCFTSAction.do"
+# All fields of that form, as a browser submits them (empty unless set in config).
+ADVANCED_SEARCH_FIELDS = [
+    "title", "uniqueId", "contractAuthority", "status", "contractType", "procedure",
+    "submissionFromDate", "submissionUntilDate", "description", "CPVCodes", "cpvLabels",
+    "estimatedValueMin", "estimatedValueMax", "tenderOpeningFromDate", "tenderOpeningUntilDate",
+]
 # Options of the home page's quick-search form: 1 = "ՄՀ-ներ" (calls for tender), 2 = organisation.
 SEARCH_SELECT_CFT = "1"
 DETAIL_PATH = "prepareViewCfTWS.do"
@@ -155,25 +161,27 @@ def has_cpv(text: str, codes: list[str]) -> list[str]:
 
 
 class Client:
-    def __init__(self, delay: float):
+    def __init__(self, delay: float, timeout: float = 60, attempts: int = 4):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "hy,en;q=0.8,ru;q=0.6"})
         self.delay = delay
+        self.timeout = timeout
+        self.attempts = attempts
 
     def get(self, url: str, data: dict | None = None) -> str:
         """GET `url`, or POST `data` to it when given."""
-        for attempt in range(4):
+        for attempt in range(self.attempts):
             try:
                 if data is None:
-                    resp = self.session.get(url, timeout=60)
+                    resp = self.session.get(url, timeout=self.timeout)
                 else:
-                    resp = self.session.post(url, data=data, timeout=60)
+                    resp = self.session.post(url, data=data, timeout=self.timeout)
                 resp.raise_for_status()
                 print(f"  HTTP {resp.status_code}, {len(resp.text)} chars, final URL {resp.url}")
                 time.sleep(self.delay)
                 return resp.text
             except requests.RequestException as exc:
-                if attempt == 3:
+                if attempt == self.attempts - 1:
                     raise
                 wait = 2 ** (attempt + 1)
                 print(f"  request failed ({exc}); retrying in {wait}s", file=sys.stderr)
@@ -275,7 +283,8 @@ def main() -> int:
     exclude_cpv = [str(c).split("-")[0].strip() for c in cfg.get("exclude_cpv") or []]
     max_age = cfg.get("max_age_months")
     now = datetime.now(YEREVAN_TZ)
-    client = Client(float(cfg.get("request_delay", 1.5)))
+    client = Client(float(cfg.get("request_delay", 1.5)), float(cfg.get("request_timeout", 60)),
+                    int(cfg.get("request_attempts", 4)))
     dump = Path(args.dump_html) if args.dump_html else None
     if args.inspect:
         client.get(HOME_URL)
@@ -290,7 +299,8 @@ def main() -> int:
     if (adv := cfg.get("advanced_search")) is not None:
         client.get(HOME_URL)
         client.get(ENGLISH_URL)
-        form = {k: "" if v is None else str(v) for k, v in adv.items()}
+        form = dict.fromkeys(ADVANCED_SEARCH_FIELDS, "")
+        form.update({k: "" if v is None else str(v) for k, v in adv.items()})
         for t in crawl(client, ADVANCED_SEARCH_URL, max_pages, dump, form):
             tenders.setdefault(t.resource_id, t)
     if cfg.get("quick_search", False):

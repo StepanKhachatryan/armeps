@@ -42,5 +42,10 @@ max_pages: 100
 # Detail pages are always downloaded for keyword matches, to check CPV codes and dates.
 fetch_details: false
 
+# Seconds to wait for the server to answer one request, and how many times to try.
+# The site can be slow to build large result lists.
+request_timeout: 300
+request_attempts: 2
+
 # Seconds to wait between HTTP requests (be polite to the server).
 request_delay: 1.5
