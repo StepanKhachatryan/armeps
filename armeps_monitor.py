@@ -114,6 +114,7 @@ class Client:
             try:
                 resp = self.session.get(url, timeout=60)
                 resp.raise_for_status()
+                print(f"  HTTP {resp.status_code}, {len(resp.text)} chars, final URL {resp.url}")
                 time.sleep(self.delay)
                 return resp.text
             except requests.RequestException as exc:
@@ -139,6 +140,10 @@ def crawl(client: Client, start_url: str, max_pages: int, dump_dir: Path | None)
             (dump_dir / f"page_{len(visited)}.html").write_text(html, encoding="utf-8")
         page_tenders = parse_tenders(html, url)
         print(f"  {len(page_tenders)} tender link(s) on page")
+        if not page_tenders:
+            print("  --- page content (first 4000 chars) ---")
+            print(html[:4000])
+            print("  --- end of page content ---")
         for t in page_tenders:
             found.setdefault(t.resource_id, t)
         queue += [u for u in find_page_links(html, url) if u not in visited]
