@@ -10,6 +10,9 @@
 #   procedure: cft.procedure.type.open | cft.procedure.type.request.for.quotations | ...
 advanced_search:
   status: cft.status.tender.submission
+# The search above is run once per keyword for each of these form fields
+# (listing all open tenders at once is too slow for the site).
+advanced_search_fields: [title, description]
 
 # The home page's quick search (one search per keyword). It finds far fewer tenders.
 quick_search: false

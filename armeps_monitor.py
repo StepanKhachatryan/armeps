@@ -296,24 +296,36 @@ def main() -> int:
     tenders: dict[str, Tender] = {}
     # Tenders returned by the site's own keyword search, mapped to the keywords that found them.
     found_by: dict[str, set[str]] = {}
+    searches: list[tuple[str, dict | None, str | None]] = []  # (url, POST form, keyword)
     if (adv := cfg.get("advanced_search")) is not None:
-        client.get(HOME_URL)
-        client.get(ENGLISH_URL)
-        form = dict.fromkeys(ADVANCED_SEARCH_FIELDS, "")
-        form.update({k: "" if v is None else str(v) for k, v in adv.items()})
-        for t in crawl(client, ADVANCED_SEARCH_URL, max_pages, dump, form):
-            tenders.setdefault(t.resource_id, t)
-    if cfg.get("quick_search", False):
-        client.get(HOME_URL)  # establishes the session cookie the search form expects
-        client.get(ENGLISH_URL)
+        base = dict.fromkeys(ADVANCED_SEARCH_FIELDS, "")
+        base.update({k: "" if v is None else str(v) for k, v in adv.items()})
+        # One search per keyword and field: the site drops requests for very large result lists.
         for kw in keywords:
-            form = {"searchSelect": SEARCH_SELECT_CFT, "searchInput": kw}
-            for t in crawl(client, QUICK_SEARCH_URL, max_pages, dump, form):
-                tenders.setdefault(t.resource_id, t)
-                found_by.setdefault(t.resource_id, set()).add(kw)
-    for url in cfg.get("search_urls") or []:
-        for t in crawl(client, url, max_pages, dump):
+            for fld in cfg.get("advanced_search_fields") or ["title", "description"]:
+                searches.append((ADVANCED_SEARCH_URL, {**base, fld: kw}, kw))
+    if cfg.get("quick_search", False):
+        for kw in keywords:
+            searches.append((QUICK_SEARCH_URL, {"searchSelect": SEARCH_SELECT_CFT, "searchInput": kw}, kw))
+    searches += [(url, None, None) for url in cfg.get("search_urls") or []]
+
+    client.get(HOME_URL)  # establishes the session cookie the search forms expect
+    client.get(ENGLISH_URL)
+    failed = 0
+    for url, form, kw in searches:
+        try:
+            found = crawl(client, url, max_pages, dump, form)
+        except requests.RequestException as exc:
+            failed += 1
+            print(f"WARNING: search failed ({exc})", file=sys.stderr)
+            continue
+        for t in found:
             tenders.setdefault(t.resource_id, t)
+            if kw:
+                found_by.setdefault(t.resource_id, set()).add(kw)
+    if searches and failed == len(searches):
+        print("ERROR: every search failed", file=sys.stderr)
+        return 1
     print(f"Total distinct tenders found: {len(tenders)}")
     if not tenders:
         print("WARNING: no tender links found; the page layout may have changed. "
