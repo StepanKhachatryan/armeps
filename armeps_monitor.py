@@ -216,6 +216,10 @@ def inspect(client: Client, url: str) -> None:
         return
     soup = BeautifulSoup(html, "html.parser")
     print(f"  title: {normalize(soup.title.get_text()) if soup.title else ''}")
+    tenders = parse_tenders(html, url)
+    print(f"  tender links: {len(tenders)}")
+    for t in tenders[:5]:
+        print(f"    {t.resource_id}: {t.text[:200]}")
     text = normalize(soup.get_text(" "))
     for m in re.finditer(r"CPV", text):
         print(f"  CPV context: ...{text[max(0, m.start() - 80):m.end() + 150]}...")
@@ -270,6 +274,7 @@ def main() -> int:
     client = Client(float(cfg.get("request_delay", 1.5)))
     dump = Path(args.dump_html) if args.dump_html else None
     if args.inspect:
+        client.get(HOME_URL)
         for url in args.inspect:
             inspect(client, url)
         return 0
