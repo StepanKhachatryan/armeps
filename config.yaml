@@ -3,8 +3,16 @@
 # contains ANY of `keywords` and NONE of `exclude_keywords`. Matching is case-insensitive.
 # Write keywords in every language the announcements may use (Armenian / English / Russian).
 
-# Run the site's own quick search (home page form, "ՄՀ-ներ" = calls for tender) once per keyword.
-quick_search: true
+# The site's advanced tender search (Խորացված որոնում). Fields are posted as-is.
+# status "cft.status.tender.submission" = Հայտերի ներկայացում (still accepting bids).
+# Other optional fields: title, contractAuthority, description,
+#   contractType: cft.contract.type.supplies | cft.contract.type.services | cft.contract.type.works
+#   procedure: cft.procedure.type.open | cft.procedure.type.request.for.quotations | ...
+advanced_search:
+  status: cft.status.tender.submission
+
+# The home page's quick search (one search per keyword). It finds far fewer tenders.
+quick_search: false
 
 # Extra result-page URLs to scan (optional, fetched with GET).
 search_urls: []
@@ -28,7 +36,7 @@ exclude_cpv:
 max_age_months: 3
 
 # Follow pagination links found on the results page (max pages per search URL).
-max_pages: 5
+max_pages: 100
 
 # Also match keywords against each tender's detail page text (slower, more accurate).
 # Detail pages are always downloaded for keyword matches, to check CPV codes and dates.

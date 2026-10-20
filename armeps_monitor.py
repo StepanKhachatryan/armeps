@@ -24,6 +24,8 @@ from bs4 import BeautifulSoup, Tag
 
 HOME_URL = "https://armeps.am/epps/home.do"
 QUICK_SEARCH_URL = "https://armeps.am/epps/quickSearchAction.do"
+# Advanced CfT search form (prepareAdvancedSearch.do?type=cft, form "searchCfTWorkspaceForm").
+ADVANCED_SEARCH_URL = "https://armeps.am/epps/viewCFTSAction.do"
 # Options of the home page's quick-search form: 1 = "ՄՀ-ներ" (calls for tender), 2 = organisation.
 SEARCH_SELECT_CFT = "1"
 DETAIL_PATH = "prepareViewCfTWS.do"
@@ -196,6 +198,8 @@ def crawl(client: Client, start_url: str, max_pages: int, dump_dir: Path | None,
             (dump_dir / f"page_{len(visited)}.html").write_text(html, encoding="utf-8")
         page_tenders = parse_tenders(html, url)
         print(f"  {len(page_tenders)} tender link(s) on page")
+        for t in page_tenders[:3]:
+            print(f"    e.g. {t.resource_id}: {t.text[:160]}")
         if not page_tenders:
             print("  --- page content (first 4000 chars) ---")
             print(html[:4000])
@@ -283,7 +287,13 @@ def main() -> int:
     tenders: dict[str, Tender] = {}
     # Tenders returned by the site's own keyword search, mapped to the keywords that found them.
     found_by: dict[str, set[str]] = {}
-    if cfg.get("quick_search", True):
+    if (adv := cfg.get("advanced_search")) is not None:
+        client.get(HOME_URL)
+        client.get(ENGLISH_URL)
+        form = {k: "" if v is None else str(v) for k, v in adv.items()}
+        for t in crawl(client, ADVANCED_SEARCH_URL, max_pages, dump, form):
+            tenders.setdefault(t.resource_id, t)
+    if cfg.get("quick_search", False):
         client.get(HOME_URL)  # establishes the session cookie the search form expects
         client.get(ENGLISH_URL)
         for kw in keywords:
