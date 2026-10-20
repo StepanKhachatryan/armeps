@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 5,11 * * *"   # 09:17 and 15:17 Yerevan time (UTC+4)
   workflow_dispatch:
+    inputs:
+      inspect:
+        description: "Space-separated URLs to inspect (prints forms/links instead of checking)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -24,12 +29,17 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Inspect pages
+        if: inputs.inspect != ''
+        run: python armeps_monitor.py --inspect ${{ inputs.inspect }}
+
       - name: Check ARMEPS
         id: check
+        if: inputs.inspect == ''
         run: python armeps_monitor.py --dump-html debug_html
 
       - name: Open issue with new announcements
-        if: steps.check.outputs.new_count != '0'
+        if: steps.check.outputs.new_count != '0' && steps.check.outputs.new_count != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -38,6 +48,7 @@ jobs:
             --body-file new_announcements.md
 
       - name: Save seen IDs
+        if: inputs.inspect == ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898333+github-actions[bot]@users.noreply.github.com"

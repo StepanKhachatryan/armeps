@@ -150,6 +150,32 @@ def crawl(client: Client, start_url: str, max_pages: int, dump_dir: Path | None)
     return list(found.values())
 
 
+def inspect(client: Client, url: str) -> None:
+    """Print the forms (action, method, fields) and procurement-related links on a page."""
+    print(f"===== INSPECT {url}")
+    try:
+        html = client.get(url)
+    except requests.RequestException as exc:
+        print(f"  error: {exc}")
+        return
+    soup = BeautifulSoup(html, "html.parser")
+    print(f"  title: {normalize(soup.title.get_text()) if soup.title else ''}")
+    for form in soup.find_all("form"):
+        print(f"  FORM action={form.get('action')!r} method={form.get('method')!r} name={form.get('name')!r}")
+        for el in form.find_all(["input", "select", "textarea"]):
+            line = f"    {el.name} name={el.get('name')!r} type={el.get('type')!r} value={el.get('value')!r}"
+            if el.name == "select":
+                opts = [(o.get("value"), normalize(o.get_text())) for o in el.find_all("option")][:15]
+                line += f" options={opts}"
+            print(line)
+    seen = set()
+    for a in soup.find_all("a", href=True):
+        href = urljoin(url, a["href"])
+        if ".do" in href and href not in seen:
+            seen.add(href)
+            print(f"  LINK {normalize(a.get_text(' '))[:80]!r} -> {href}")
+
+
 def load_seen(path: Path) -> set[str]:
     return set(json.loads(path.read_text())) if path.exists() else set()
 
@@ -170,6 +196,7 @@ def main() -> int:
     ap.add_argument("--json", default="data/latest_matches.json")
     ap.add_argument("--dump-html", metavar="DIR", help="save fetched pages for debugging")
     ap.add_argument("--all", action="store_true", help="report matches even if seen before")
+    ap.add_argument("--inspect", nargs="+", metavar="URL", help="print forms and links of pages, then exit")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -177,6 +204,10 @@ def main() -> int:
     exclude = [str(k) for k in cfg.get("exclude_keywords") or []]
     client = Client(float(cfg.get("request_delay", 1.5)))
     dump = Path(args.dump_html) if args.dump_html else None
+    if args.inspect:
+        for url in args.inspect:
+            inspect(client, url)
+        return 0
 
     tenders: dict[str, Tender] = {}
     for url in cfg["search_urls"]:
