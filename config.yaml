@@ -23,10 +23,15 @@ exclude_keywords: []
 exclude_cpv:
   - "71351540"
 
+# Skip tenders published more than this many months ago (by "Date of Publication/Invitation").
+# Tenders whose submission deadline has already passed are always skipped.
+max_age_months: 3
+
 # Follow pagination links found on the results page (max pages per search URL).
 max_pages: 5
 
-# Also download each tender's detail page and match against its text (slower, more accurate).
+# Also match keywords against each tender's detail page text (slower, more accurate).
+# Detail pages are always downloaded for keyword matches, to check CPV codes and dates.
 fetch_details: false
 
 # Seconds to wait between HTTP requests (be polite to the server).

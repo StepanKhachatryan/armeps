@@ -12,7 +12,11 @@ procurement announcements that match your keywords. It only reports each one onc
    With `fetch_details: true`, it also matches against each tender's full detail page.
 4. Drops tenders whose detail page lists a CPV code from `exclude_cpv`
    (the detail page shows them as `CPV Codes: 30211220-[en] …`).
-5. Adds the IDs it has reported to `data/seen.json`, so the next run reports only new tenders.
+5. Drops tenders whose submission deadline ("Time-limit for receipt of tenders or requests to
+   participate" / "Ժամանակի սահմանափակում հայտերի ստացման կամ մասնակցության հայտերի համար")
+   has passed, and those published ("Date of Publication/Invitation") more than
+   `max_age_months` ago. Times are Yerevan time (UTC+4).
+6. Adds the IDs it has reported to `data/seen.json`, so the next run reports only new tenders.
 
 ## Setup
 1. Edit `config.yaml`. Put keywords in Armenian, plus English/Russian if needed.

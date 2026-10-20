@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -26,6 +27,15 @@ QUICK_SEARCH_URL = "https://armeps.am/epps/quickSearchAction.do"
 # Options of the home page's quick-search form: 1 = "ՄՀ-ներ" (calls for tender), 2 = organisation.
 SEARCH_SELECT_CFT = "1"
 DETAIL_PATH = "prepareViewCfTWS.do"
+# Switches the session's interface language to English, so detail-page labels are predictable.
+ENGLISH_URL = "https://armeps.am/epps/changeLanguage.do?language=en&url="
+# Detail-page labels (English interface, plus the Armenian deadline label as fallback).
+DEADLINE_LABELS = [
+    "Time-limit for receipt of tenders or requests to participate",
+    "Ժամանակի սահմանափակում հայտերի ստացման կամ մասնակցության հայտերի համար",
+]
+PUBLISHED_LABELS = ["Date of Publication/Invitation"]
+YEREVAN_TZ = timezone(timedelta(hours=4))  # Armenia: UTC+4, no daylight saving time
 NEXT_LINK_TEXTS = {"next", "հաջորդ", "следующая", ">", ">>", "»", "›"}
 USER_AGENT = "Mozilla/5.0 (compatible; armeps-monitor/1.0; +https://github.com/)"
 
@@ -37,6 +47,8 @@ class Tender:
     text: str
     columns: dict[str, str] = field(default_factory=dict)
     detail_text: str = ""
+    deadline: str = ""
+    published: str = ""
 
     @property
     def title(self) -> str:
@@ -105,6 +117,34 @@ def matches(text: str, keywords: list[str], exclude: list[str]) -> list[str]:
     if any(x.casefold() in folded for x in exclude):
         return []
     return [k for k in keywords if k.casefold() in folded]
+
+
+def find_date(text: str, labels: list[str]) -> datetime | None:
+    """Return the 'dd/mm/yyyy [HH:MM]' date that follows any of `labels`, in Yerevan time."""
+    for label in labels:
+        m = re.search(re.escape(label) + r"\s*:?\s*(\d{2}/\d{2}/\d{4})(?:\s+(\d{2}:\d{2}))?", text)
+        if m:
+            return datetime.strptime(f"{m[1]} {m[2] or '23:59'}", "%d/%m/%Y %H:%M").replace(tzinfo=YEREVAN_TZ)
+    return None
+
+
+def months_ago(now: datetime, months: int) -> datetime:
+    """`now` shifted back by calendar months (day clamped to the month's length)."""
+    y, m = divmod(now.year * 12 + now.month - 1 - months, 12)
+    m += 1
+    days = [31, 29 if y % 4 == 0 and (y % 100 or y % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    return now.replace(year=y, month=m, day=min(now.day, days[m - 1]))
+
+
+def date_filter(text: str, now: datetime, max_age_months: int | None) -> str | None:
+    """Return why the tender should be skipped based on its dates, or None to keep it."""
+    deadline = find_date(text, DEADLINE_LABELS)
+    if deadline and deadline < now:
+        return f"deadline passed ({deadline:%d/%m/%Y %H:%M})"
+    published = find_date(text, PUBLISHED_LABELS)
+    if max_age_months and published and published < months_ago(now, max_age_months):
+        return f"published {published:%d/%m/%Y}, older than {max_age_months} months"
+    return None
 
 
 def has_cpv(text: str, codes: list[str]) -> list[str]:
@@ -206,7 +246,7 @@ def write_report(path: Path, items: list[tuple[Tender, list[str]]]) -> None:
     lines = [f"# New ARMEPS announcements ({len(items)})", ""]
     for t, kws in items:
         lines.append(f"- [{t.resource_id}]({t.url}) — {t.title}  ")
-        lines.append(f"  _matched: {', '.join(kws)}_")
+        lines.append(f"  published: {t.published} · deadline: **{t.deadline}** · _matched: {', '.join(kws)}_")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -225,6 +265,8 @@ def main() -> int:
     keywords = [str(k) for k in cfg.get("keywords") or []]
     exclude = [str(k) for k in cfg.get("exclude_keywords") or []]
     exclude_cpv = [str(c).split("-")[0].strip() for c in cfg.get("exclude_cpv") or []]
+    max_age = cfg.get("max_age_months")
+    now = datetime.now(YEREVAN_TZ)
     client = Client(float(cfg.get("request_delay", 1.5)))
     dump = Path(args.dump_html) if args.dump_html else None
     if args.inspect:
@@ -238,6 +280,7 @@ def main() -> int:
     found_by: dict[str, set[str]] = {}
     if cfg.get("quick_search", True):
         client.get(HOME_URL)  # establishes the session cookie the search form expects
+        client.get(ENGLISH_URL)
         for kw in keywords:
             form = {"searchSelect": SEARCH_SELECT_CFT, "searchInput": kw}
             for t in crawl(client, QUICK_SEARCH_URL, max_pages, dump, form):
@@ -265,19 +308,27 @@ def main() -> int:
         excluded = any(x.casefold() in haystack.casefold() for x in exclude)
         if not kws and t.resource_id in found_by and not excluded:
             kws = sorted(found_by[t.resource_id])
-        if kws and exclude_cpv:
-            # CPV codes are not necessarily in the results row, so check the detail page too.
-            if not t.detail_text:
-                t.detail_text = normalize(BeautifulSoup(client.get(t.url), "html.parser").get_text(" "))
-            if bad := has_cpv(f"{t.text} {t.detail_text}", exclude_cpv):
-                print(f"  skipping {t.resource_id}: excluded CPV {', '.join(bad)}")
-                continue
+        if not kws:
+            continue
+        # CPV codes and dates are only on the detail page.
+        if not t.detail_text:
+            t.detail_text = normalize(BeautifulSoup(client.get(t.url), "html.parser").get_text(" "))
+        if bad := has_cpv(f"{t.text} {t.detail_text}", exclude_cpv):
+            print(f"  skipping {t.resource_id}: excluded CPV {', '.join(bad)}")
+            continue
+        if reason := date_filter(t.detail_text, now, max_age):
+            print(f"  skipping {t.resource_id}: {reason}")
+            continue
+        d = find_date(t.detail_text, DEADLINE_LABELS)
+        pub = find_date(t.detail_text, PUBLISHED_LABELS)
+        t.deadline = f"{d:%d/%m/%Y %H:%M}" if d else "not found"
+        t.published = f"{pub:%d/%m/%Y %H:%M}" if pub else "not found"
         if kws:
             new.append((t, kws))
 
     print(f"New matching announcements: {len(new)}")
     for t, kws in new:
-        print(f"  {t.resource_id}: {t.title} [{', '.join(kws)}]\n    {t.url}")
+        print(f"  {t.resource_id}: {t.title} [{', '.join(kws)}] deadline {t.deadline}\n    {t.url}")
 
     Path(args.json).parent.mkdir(parents=True, exist_ok=True)
     Path(args.json).write_text(json.dumps(

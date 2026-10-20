@@ -9,6 +9,10 @@ on:
         description: "Space-separated URLs to inspect (prints forms/links instead of checking)"
         required: false
         default: ""
+      recheck_seen:
+        description: "Also re-check announcements already reported before"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -38,7 +42,7 @@ jobs:
       - name: Check ARMEPS
         id: check
         if: inputs.inspect == ''
-        run: python armeps_monitor.py --dump-html debug_html
+        run: python armeps_monitor.py --dump-html debug_html ${{ inputs.recheck_seen && '--all' || '' }}
 
       - name: Open issue with new announcements
         if: steps.check.outputs.new_count != '0' && steps.check.outputs.new_count != ''
