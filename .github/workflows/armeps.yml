@@ -31,6 +31,8 @@ jobs:
 
       - name: Inspect pages
         if: inputs.inspect != ''
+        env:
+          INSPECT_FULL_TEXT: "1"
         run: python armeps_monitor.py --inspect ${{ inputs.inspect }}
 
       - name: Check ARMEPS

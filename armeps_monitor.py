@@ -179,6 +179,9 @@ def inspect(client: Client, url: str) -> None:
     text = normalize(soup.get_text(" "))
     for m in re.finditer(r"CPV", text):
         print(f"  CPV context: ...{text[max(0, m.start() - 80):m.end() + 150]}...")
+    if os.environ.get("INSPECT_FULL_TEXT"):
+        main = text[text.find("CPV") - 1500:] if "CPV" in text else text
+        print(f"  FULL TEXT: {main[:5000]}")
     for form in soup.find_all("form"):
         print(f"  FORM action={form.get('action')!r} method={form.get('method')!r} name={form.get('name')!r}")
         for el in form.find_all(["input", "select", "textarea"]):
