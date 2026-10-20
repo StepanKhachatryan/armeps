@@ -4,11 +4,15 @@ Checks [armeps.am](https://armeps.am/epps/quickSearchAction.do) on a schedule an
 procurement announcements that match your keywords. It only reports each one once.
 
 ## How it works
-1. Downloads the results page(s) listed in `search_urls` in `config.yaml`, following pagination up to `max_pages`.
+1. Runs the site's own quick search (the home-page form: `POST /epps/quickSearchAction.do` with
+   `searchSelect=1` "CfTs" and `searchInput=<keyword>`) once per keyword, following pagination
+   up to `max_pages`. Any extra URLs in `search_urls` are fetched too.
 2. Collects every link to a tender workspace (`/epps/cft/prepareViewCfTWS.do?resourceId=…`) along with the text of its table row.
 3. Keeps the tenders whose text contains any of your `keywords` and none of your `exclude_keywords`.
    With `fetch_details: true`, it also matches against each tender's full detail page.
-4. Adds the IDs it has reported to `data/seen.json`, so the next run reports only new tenders.
+4. Drops tenders whose detail page lists a CPV code from `exclude_cpv`
+   (the detail page shows them as `CPV Codes: 30211220-[en] …`).
+5. Adds the IDs it has reported to `data/seen.json`, so the next run reports only new tenders.
 
 ## Setup
 1. Edit `config.yaml`. Put keywords in Armenian, plus English/Russian if needed.
@@ -26,6 +30,10 @@ pip install -r requirements.txt
 python armeps_monitor.py --dump-html debug_html   # --all re-reports previously seen matches
 python -m pytest -q tests
 ```
+
+## Inspecting pages
+Start the workflow with the `inspect` input set to one or more URLs. It prints each page's
+forms, links and the text around "CPV" instead of running a check.
 
 ## Troubleshooting
 If a run finds `0 tender link(s)`, check the `armeps-html` artifact on the workflow run

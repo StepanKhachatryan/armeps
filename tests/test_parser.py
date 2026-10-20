@@ -39,3 +39,11 @@ def test_has_cpv_whole_code_only():
     assert has_cpv("CPV 71351540", ["71351540"]) == ["71351540"]
     assert has_cpv("CPV 713515401", ["71351540"]) == []
     assert has_cpv("CPV 71351500-8", ["71351540"]) == []
+
+
+def test_has_cpv_armeps_detail_format():
+    # Format seen on armeps.am tender detail pages (resourceId=9308573).
+    text = ("Procedure: Request for Quotations CPV Codes: 30211170-[en] մինիհամակարգչային սարքեր "
+            "30211220-[en] սեղանի համակարգիչներ 71351540-[en] Inclusion of e-Auctions: No")
+    assert has_cpv(text, ["71351540"]) == ["71351540"]
+    assert has_cpv(text, ["30211170", "99999999"]) == ["30211170"]
