@@ -21,6 +21,10 @@ import requests
 import yaml
 from bs4 import BeautifulSoup, Tag
 
+HOME_URL = "https://armeps.am/epps/home.do"
+QUICK_SEARCH_URL = "https://armeps.am/epps/quickSearchAction.do"
+# Options of the home page's quick-search form: 1 = "ՄՀ-ներ" (calls for tender), 2 = organisation.
+SEARCH_SELECT_CFT = "1"
 DETAIL_PATH = "prepareViewCfTWS.do"
 NEXT_LINK_TEXTS = {"next", "հաջորդ", "следующая", ">", ">>", "»", "›"}
 USER_AGENT = "Mozilla/5.0 (compatible; armeps-monitor/1.0; +https://github.com/)"
@@ -109,10 +113,14 @@ class Client:
         self.session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "hy,en;q=0.8,ru;q=0.6"})
         self.delay = delay
 
-    def get(self, url: str) -> str:
+    def get(self, url: str, data: dict | None = None) -> str:
+        """GET `url`, or POST `data` to it when given."""
         for attempt in range(4):
             try:
-                resp = self.session.get(url, timeout=60)
+                if data is None:
+                    resp = self.session.get(url, timeout=60)
+                else:
+                    resp = self.session.post(url, data=data, timeout=60)
                 resp.raise_for_status()
                 print(f"  HTTP {resp.status_code}, {len(resp.text)} chars, final URL {resp.url}")
                 time.sleep(self.delay)
@@ -126,15 +134,18 @@ class Client:
         raise AssertionError("unreachable")
 
 
-def crawl(client: Client, start_url: str, max_pages: int, dump_dir: Path | None) -> list[Tender]:
+def crawl(client: Client, start_url: str, max_pages: int, dump_dir: Path | None,
+          form: dict | None = None) -> list[Tender]:
+    """Fetch `start_url` (POSTing `form` if given), then follow pagination links."""
     queue, visited, found = [start_url], set(), {}
     while queue and len(visited) < max_pages:
         url = queue.pop(0)
         if url in visited:
             continue
         visited.add(url)
-        print(f"Fetching {url}")
-        html = client.get(url)
+        first = len(visited) == 1
+        print(f"Fetching {url}" + (f" with {form}" if form and first else ""))
+        html = client.get(url, form if first else None)
         if dump_dir:
             dump_dir.mkdir(parents=True, exist_ok=True)
             (dump_dir / f"page_{len(visited)}.html").write_text(html, encoding="utf-8")
@@ -209,9 +220,19 @@ def main() -> int:
             inspect(client, url)
         return 0
 
+    max_pages = int(cfg.get("max_pages", 5))
     tenders: dict[str, Tender] = {}
-    for url in cfg["search_urls"]:
-        for t in crawl(client, url, int(cfg.get("max_pages", 5)), dump):
+    # Tenders returned by the site's own keyword search, mapped to the keywords that found them.
+    found_by: dict[str, set[str]] = {}
+    if cfg.get("quick_search", True):
+        client.get(HOME_URL)  # establishes the session cookie the search form expects
+        for kw in keywords:
+            form = {"searchSelect": SEARCH_SELECT_CFT, "searchInput": kw}
+            for t in crawl(client, QUICK_SEARCH_URL, max_pages, dump, form):
+                tenders.setdefault(t.resource_id, t)
+                found_by.setdefault(t.resource_id, set()).add(kw)
+    for url in cfg.get("search_urls") or []:
+        for t in crawl(client, url, max_pages, dump):
             tenders.setdefault(t.resource_id, t)
     print(f"Total distinct tenders found: {len(tenders)}")
     if not tenders:
@@ -229,6 +250,9 @@ def main() -> int:
             t.detail_text = normalize(BeautifulSoup(client.get(t.url), "html.parser").get_text(" "))
             haystack += " " + t.detail_text
         kws = matches(haystack, keywords, exclude)
+        excluded = any(x.casefold() in haystack.casefold() for x in exclude)
+        if not kws and t.resource_id in found_by and not excluded:
+            kws = sorted(found_by[t.resource_id])
         if kws:
             new.append((t, kws))
 

@@ -3,8 +3,11 @@
 # contains ANY of `keywords` and NONE of `exclude_keywords`. Matching is case-insensitive.
 # Write keywords in every language the announcements may use (Armenian / English / Russian).
 
-search_urls:
-  - https://armeps.am/epps/quickSearchAction.do
+# Run the site's own quick search (home page form, "ՄՀ-ներ" = calls for tender) once per keyword.
+quick_search: true
+
+# Extra result-page URLs to scan (optional, fetched with GET).
+search_urls: []
 
 keywords:
   - համակարգիչ        # computer
