@@ -107,6 +107,11 @@ def matches(text: str, keywords: list[str], exclude: list[str]) -> list[str]:
     return [k for k in keywords if k.casefold() in folded]
 
 
+def has_cpv(text: str, codes: list[str]) -> list[str]:
+    """Return the CPV codes (8-digit, optionally with '-N' check digit) present in text."""
+    return [c for c in codes if re.search(rf"(?<!\d){re.escape(c)}(?!\d)", text)]
+
+
 class Client:
     def __init__(self, delay: float):
         self.session = requests.Session()
@@ -171,6 +176,9 @@ def inspect(client: Client, url: str) -> None:
         return
     soup = BeautifulSoup(html, "html.parser")
     print(f"  title: {normalize(soup.title.get_text()) if soup.title else ''}")
+    text = normalize(soup.get_text(" "))
+    for m in re.finditer(r"CPV", text):
+        print(f"  CPV context: ...{text[max(0, m.start() - 80):m.end() + 150]}...")
     for form in soup.find_all("form"):
         print(f"  FORM action={form.get('action')!r} method={form.get('method')!r} name={form.get('name')!r}")
         for el in form.find_all(["input", "select", "textarea"]):
@@ -213,6 +221,7 @@ def main() -> int:
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     keywords = [str(k) for k in cfg.get("keywords") or []]
     exclude = [str(k) for k in cfg.get("exclude_keywords") or []]
+    exclude_cpv = [str(c).split("-")[0].strip() for c in cfg.get("exclude_cpv") or []]
     client = Client(float(cfg.get("request_delay", 1.5)))
     dump = Path(args.dump_html) if args.dump_html else None
     if args.inspect:
@@ -253,6 +262,13 @@ def main() -> int:
         excluded = any(x.casefold() in haystack.casefold() for x in exclude)
         if not kws and t.resource_id in found_by and not excluded:
             kws = sorted(found_by[t.resource_id])
+        if kws and exclude_cpv:
+            # CPV codes are not necessarily in the results row, so check the detail page too.
+            if not t.detail_text:
+                t.detail_text = normalize(BeautifulSoup(client.get(t.url), "html.parser").get_text(" "))
+            if bad := has_cpv(f"{t.text} {t.detail_text}", exclude_cpv):
+                print(f"  skipping {t.resource_id}: excluded CPV {', '.join(bad)}")
+                continue
         if kws:
             new.append((t, kws))
 

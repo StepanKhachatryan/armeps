@@ -19,6 +19,10 @@ keywords:
 
 exclude_keywords: []
 
+# Skip tenders that list any of these CPV codes (8 digits; the "-N" check digit is ignored).
+exclude_cpv:
+  - "71351540"
+
 # Follow pagination links found on the results page (max pages per search URL).
 max_pages: 5
 

@@ -1,5 +1,5 @@
 """Tests for parsing logic. The HTML below is a SYNTHETIC fixture, not a copy of armeps.am."""
-from armeps_monitor import find_page_links, matches, parse_tenders
+from armeps_monitor import find_page_links, has_cpv, matches, parse_tenders
 
 BASE = "https://armeps.am/epps/quickSearchAction.do"
 HTML = """
@@ -32,3 +32,10 @@ def test_matches_case_insensitive_and_exclude():
 def test_page_links_same_action_only():
     links = find_page_links(HTML, BASE)
     assert set(links) == {"https://armeps.am/epps/quickSearchAction.do?d-1-p=2"}
+
+
+def test_has_cpv_whole_code_only():
+    assert has_cpv("CPV: 71351540-0 Geophysical", ["71351540"]) == ["71351540"]
+    assert has_cpv("CPV 71351540", ["71351540"]) == ["71351540"]
+    assert has_cpv("CPV 713515401", ["71351540"]) == []
+    assert has_cpv("CPV 71351500-8", ["71351540"]) == []
